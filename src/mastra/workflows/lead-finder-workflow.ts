@@ -34,13 +34,25 @@ const searchStep = createStep({
 
     const prompt = `Please search for information about: "${inputData.query}"
     
-    Please provide:
-    1. A comprehensive search using the Google search tool
-    2. Analysis of the results
-    3. Organized information in a clear format
-    4. Any relevant details like contact information, ratings, or special offers
+    Please:
+    1. Use the Google search tool to find relevant businesses
+    2. Return the search results in valid JSON format as an array of objects
+    3. Each object should have: name, place_id, rating, address, phone, website, reviews
     
-    Format your response to be helpful and actionable for the user.`;
+    IMPORTANT: Your response must be ONLY valid JSON in this exact format:
+    [
+      {
+        "name": "Business Name",
+        "place_id": "place_id_here",
+        "rating": 4.5,
+        "address": "Full address",
+        "phone": "+1234567890",
+        "website": "https://website.com",
+        "reviews": []
+      }
+    ]
+    
+    Do not include any explanatory text, only return the JSON array.`;
 
     const response = await agent.stream([
       {
@@ -57,31 +69,65 @@ const searchStep = createStep({
     console.log("The agent response is", resultText);
     
     // Parse the resultText to extract structured data
-    // The agent should return JSON-like data that matches searchResultSchema
     try {
-        // Try to parse as JSON first
-        const parsedData = JSON.parse(resultText);
-        if (Array.isArray(parsedData)) {
-          return parsedData;
+      // Try to parse the response as JSON first
+      let jsonData = null;
+      try {
+        jsonData = JSON.parse(resultText);
+      } catch (directParseError) {
+        // If direct parsing fails, try to extract JSON from text
+        const jsonMatch = resultText.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          jsonData = JSON.parse(jsonMatch[0]);
         }
-      } catch (error) {
-        // If not JSON, try to extract structured data from text
-        console.log('Response is not JSON, attempting to parse text response');
       }
-  
-      // If the response is not structured JSON, create a basic result
-      // This is a fallback - ideally the agent should return structured data
-      const fallbackResult = [{
-        name: 'Search completed',
-        place_id: 'fallback_id',
-        rating: undefined,
-        address: undefined,
-        phone: undefined,
-        website: undefined,
-        reviews: undefined,
-      }];
-  
-      return fallbackResult;
+      
+      if (Array.isArray(jsonData)) {
+        return jsonData;
+      } else if (jsonData && typeof jsonData === 'object') {
+        // If it's a single object, wrap it in an array
+        return [jsonData];
+      }
+    } catch (error) {
+      console.log('Response is not valid JSON, attempting fallback parsing...');
+      
+      // Try to extract lead information from text using regex patterns
+      const businessMatches = resultText.match(/(?:name|business):\s*["']([^"']+)["']/gi);
+      const websiteMatches = resultText.match(/(?:website|url):\s*["']([^"']+)["']/gi);
+      
+      if (businessMatches && businessMatches.length > 0) {
+        console.log('Attempting to extract lead data from text...');
+        return businessMatches.map((match, index) => {
+          const name = match.replace(/(?:name|business):\s*["']/i, '').replace(/["']$/, '');
+          const website = websiteMatches && websiteMatches[index] 
+            ? websiteMatches[index].replace(/(?:website|url):\s*["']/i, '').replace(/["']$/, '')
+            : undefined;
+          
+          return {
+            name: name,
+            place_id: `extracted_${index}`,
+            rating: undefined,
+            address: undefined,
+            phone: undefined,
+            website: website,
+            reviews: undefined,
+          };
+        });
+      }
+    }
+
+    // Fallback result
+    const fallbackResult = [{
+      name: 'Search completed',
+      place_id: 'fallback_id',
+      rating: undefined,
+      address: undefined,
+      phone: undefined,
+      website: undefined,
+      reviews: undefined,
+    }];
+
+    return fallbackResult;
   },
 });
 

@@ -86,6 +86,5 @@ const performGoogleSearch = async (query: string) => {
     });
   });
 
-  console.log("The place details are", placeDetails);
   return placeDetails;
 };
